@@ -1,3 +1,11 @@
+/******************************************************
+ * File: BWHapticsAudio
+ * Description:
+ *    Used for driving a 1-DOF capstan drive
+ *    Communicates with Processing script via serial
+ *    MUSIC 251 Spring 2019 final project
+ * Author: Shenli Yuan {shenliy@stanford.edu}
+ ******************************************************/
 
 #include <DDHapticHelper.h>
 float myKp = 3 ;
@@ -20,7 +28,6 @@ long currVelUpdate = 0;
 
 float Kd_vel = 0.0; //0.5;
 
-
 /*force filter*/
 int thisForce = 0;
 #define ffWindowSize 50
@@ -28,6 +35,14 @@ float ffWindow[ffWindowSize];
 int ffIndex = 0;
 
 float positionVal = 0;
+
+/* State machine and communication variables */
+typedef enum {UPDATE_HAPTICS, WAIT_FOR_CMD, RESET_POS} HapticState_t;
+HapticState_t currState = WAIT_FOR_CMD;
+char cmdProcessing = '0';
+
+unsigned long startResetTime = 0;
+boolean ledState = LOW;
 
 void setup() {
   Serial.begin(115200);
@@ -62,12 +77,46 @@ void setup() {
   for (int i = 0; i < filterWindowSize; i++) {
     filterWindow[i] = 0;
   }
+  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 
 void loop() {
+  switch (currState) {
+    case WAIT_FOR_CMD:
+      if (Serial.available() > 0) {
+        cmdProcessing = Serial.read();
+        currState = RESET_POS;
+        startResetTime = millis();
+        
+        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, ledState);
+        
+//        delay(100);
+        analogWrite(pwmPin0, 100);
+        analogWrite(pwmPin1, 0);
+      }
+//      if (cmdProcessing != '0') {
+//        
+//      }
+    break;
+    case UPDATE_HAPTICS:
+      updateHaptics();
+    break;
+    case RESET_POS:
+      if (millis() - startResetTime > 1000){
+        currState = UPDATE_HAPTICS;
+//        ledState = !ledState;
+        digitalWrite(LED_BUILTIN, LOW);
+      }
+    break;
+  }
   
-  toggleState();
+}
+
+void updateHaptics() {
+//  toggleState();
+  startSample = true;
   
   updateEncoderAB();
   positionVal = filterEncoderAB();
@@ -89,6 +138,13 @@ void loop() {
   }
   
   printVals();
+//  if (Serial.available()) {
+//    cmdProcessing = Serial.read();
+//    Serial.println(cmdProcessing);
+//  }
+//  if (cmdProcessing != '0') {
+//    currState = WAIT_FOR_CMD;
+//  }
 }
 
 float filterForce() {
@@ -123,14 +179,8 @@ void updateVelocity() {
 
 void printVals() {
     currPrintTime = millis();
-    if (currPrintTime - lastPrintTime > printTimeInterval) {
-      Serial.print(Setpoint);
-//      Serial.print(", ");
-//      Serial.print(dxh_filt*100.0);
-//      Serial.print(", ");
-//      Serial.print(dataCount);
-      Serial.print(", ");
-      Serial.print(Input);
+    if (currPrintTime - lastPrintTime > 5*printTimeInterval) {
+      Serial.print(positionVal);
       Serial.println();
       lastPrintTime = currPrintTime;
     }
