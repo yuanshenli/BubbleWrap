@@ -12,6 +12,12 @@ float myKp = 3 ;
 float myKi = 0.0; //0.12;
 float myKd = 0.0; //0.01 * Kp;
 
+float Kp_pos = 20;
+float Kd_pos = 0.1;
+float Ki_pos = 0;
+float Setpoint_pos, Output_pos;  // Input_pos defined in library
+PID myPID_pos(&Input_pos, &Output_pos, &Setpoint_pos, Kp, Ki, Kd, DIRECT);
+
 /*Velocity calculation*/
 float xh = 0;           // position of the handle [m]
 float xh_prev;          // Distance of the handle at previous time step
@@ -40,6 +46,7 @@ float positionVal = 0;
 typedef enum {UPDATE_HAPTICS, WAIT_FOR_CMD, RESET_POS} HapticState_t;
 HapticState_t currState = WAIT_FOR_CMD;
 char cmdProcessing = '0';
+int hapticProfile = 0;    // 0: no haptics, 1: pop, 2: leak
 
 unsigned long startResetTime = 0;
 boolean ledState = LOW;
@@ -57,6 +64,13 @@ void setup() {
   myPID.SetSampleTime(100);   // Sample time 100 micros
   analogWriteResolution(myRes);
   myPID.SetTunings(myKp, myKi, myKd);
+  /* PID pos (for reset)*/
+  Input_pos = 0;
+  Setpoint_pos = 0;
+  myPID_pos.SetMode(AUTOMATIC);
+  myPID_pos.SetOutputLimits(-pow(2, myRes), pow(2, myRes));
+  myPID_pos.SetSampleTime(100);   // Sample time 100 micros
+  myPID_pos.SetTunings(Kp_pos, Ki_pos, Kd_pos);
   /* Encoder ABI setup */
   pinMode(ENC_A, INPUT);
   pinMode(ENC_B, INPUT);
@@ -86,29 +100,39 @@ void loop() {
     case WAIT_FOR_CMD:
       if (Serial.available() > 0) {
         cmdProcessing = Serial.read();
-        currState = RESET_POS;
-        startResetTime = millis();
+        if (cmdProcessing >= '0' && cmdProcessing <= '9') {
+          currState = RESET_POS;
+//          blinkNTimes(3, 1000);
+          startResetTime = millis();
         
-        ledState = !ledState;
-        digitalWrite(LED_BUILTIN, ledState);
-        
-//        delay(100);
-        analogWrite(pwmPin0, 100);
-        analogWrite(pwmPin1, 0);
+          analogWrite(pwmPin0, 500);
+          analogWrite(pwmPin1, 0);
+          if (cmdProcessing <= '2') hapticProfile = 0;
+          else if (cmdProcessing >= '7') hapticProfile = 2;
+          else hapticProfile = 1;
+          
+        }
       }
-//      if (cmdProcessing != '0') {
-//        
-//      }
+
     break;
     case UPDATE_HAPTICS:
       updateHaptics();
+      if (Serial.available() > 0) {
+        cmdProcessing = Serial.read();
+        if (cmdProcessing == 'R') {
+          Serial.println(positionVal);
+        } else if (cmdProcessing == 'S'){
+          analogWrite(pwmPin0, 0);
+          analogWrite(pwmPin1, 0);
+          delay(3000);
+          currState = WAIT_FOR_CMD;
+//          blinkNTimes(1, 200);
+        }
+    }
+      
     break;
     case RESET_POS:
-      if (millis() - startResetTime > 1000){
-        currState = UPDATE_HAPTICS;
-//        ledState = !ledState;
-        digitalWrite(LED_BUILTIN, LOW);
-      }
+      resetPos();
     break;
   }
   
@@ -136,15 +160,23 @@ void updateHaptics() {
     analogWrite(pwmPin0, pwmVal0);
     analogWrite(pwmPin1, pwmVal1);
   }
-  
-  printVals();
-//  if (Serial.available()) {
-//    cmdProcessing = Serial.read();
-//    Serial.println(cmdProcessing);
-//  }
-//  if (cmdProcessing != '0') {
-//    currState = WAIT_FOR_CMD;
-//  }
+}
+
+void resetPos() {
+  updateEncoderAB();
+  positionVal = filterEncoderAB();
+  updateVelocity();
+  if (myPID_pos.Compute()) {  
+    pwmVal0 = (abs(Output_pos) - Output_pos) / 2;
+    pwmVal1 = (abs(Output_pos) + Output_pos) / 2;
+    analogWrite(pwmPin0, pwmVal0);
+    analogWrite(pwmPin1, pwmVal1);
+  }
+  if (abs(Input_pos - Setpoint_pos) < 3){
+    currState = UPDATE_HAPTICS;
+    Serial.println("T");
+    blinkNTimes(1, 200);
+  }
 }
 
 float filterForce() {
@@ -177,11 +209,13 @@ void updateVelocity() {
   
 }
 
-void printVals() {
-    currPrintTime = millis();
-    if (currPrintTime - lastPrintTime > 5*printTimeInterval) {
-      Serial.print(positionVal);
-      Serial.println();
-      lastPrintTime = currPrintTime;
-    }
+
+void blinkNTimes(int n, int dt) {
+  for (int i = 0; i < n; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(dt);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(dt);
+  }
 }
+  
