@@ -149,7 +149,8 @@ void updateHaptics() {
   
   updateVelocity();
 
-  Setpoint = calculateSetpoint();
+  Setpoint = customCalculateSetpoint(hapticProfile);
+//  Setpoint = calculateSetpoint();
   
   if (myPID.Compute()) {
     Output -= dxh_filt * Kd_vel;
@@ -218,4 +219,41 @@ void blinkNTimes(int n, int dt) {
     delay(dt);
   }
 }
+
+
+float customCalculateSetpoint(int pf) {
+  pf = 2;
+  if (pf == 0) {
+    customPPos = profilePos0;
+    customPForce = profileForce0;
+    customPSize = profileSize0;
+  } else if (pf == 1) {
+    customPPos = profilePos1;
+    customPForce = profileForce1;
+    customPSize = profileSize1;
+  } else if (pf == 2) {
+    customPPos = profilePos2;
+    customPForce = profileForce2;
+    customPSize = profileSize2;
+  }
+  
+  float interp_out = 0;
+  if (Input_pos <= customPPos[0]) {
+    interp_out = customPForce[0];
+    return interp_out;
+  } else if (Input_pos >= customPPos[customPSize-1]) {
+    interp_out = customPForce[customPSize-1];
+    return interp_out;
+  } else {
+    for (int i = 0; i < customPSize; i++) {
+      if (Input_pos > customPPos[i]) continue;
+      else {
+        interp_out = customPForce[i-1] + (Input_pos - customPPos[i-1]) / (customPPos[i] - customPPos[i-1]) * (customPForce[i] - customPForce[i-1]);
+        return interp_out;
+      }
+    }
+  }
+  return -1; 
+}
+ 
   

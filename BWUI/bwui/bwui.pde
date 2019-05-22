@@ -10,6 +10,7 @@ import controlP5.*;
 ControlP5 cp5;
 int buttonWidth = 120;
 int sliderWidth = 500;
+int sliderVal = 0;
 
 // State machine variables
 int uiState = 0;  // 0: start, 1: play, 2: rate, 3: finish
@@ -33,10 +34,20 @@ int currExitTime = 0;
 int exitInterval = 1000;   // time from playing the sound to switching to rate page
 boolean resetReady = false;
 
+// Data
+PrintWriter output;
+
 void setup() {
   size(1280, 720);
   background(255);
-  generateRandomArray();    
+  generateRandomArray(); 
+  
+  int mo = month();
+  int d = day();
+  int h = hour();
+  int m = minute();
+  String fileName = "/results/" + str(mo) + "_" + str(d) + "_" + str(h) + "_" + str(m) +".txt";
+  output = createWriter(fileName); 
   
   printArray(Serial.list());
   myPort = new Serial(this, Serial.list()[11], 115200);  //
@@ -110,11 +121,14 @@ void setup() {
      
    cp5.addSlider("pleasantness")
      .setBroadcast(false)
-     .setRange(0,255)
-     .setValue(128)
+     .setRange(0,10)
+     .setValue(5)
+     .setNumberOfTickMarks(11)
      .setPosition(width/2-sliderWidth/2,200)
      .setSize(sliderWidth,20)
      .setBroadcast(true);
+     
+   
    cp5.getController("confirm").moveTo("rateTab");
    cp5.getController("pleasantness").moveTo("rateTab"); 
    cp5.getController("quit").moveTo("finishTab");
@@ -134,12 +148,13 @@ void draw() {
     break;
     case 1:    // play
       cp5.getTab("playTab").bringToFront();
+      // wait for device to reset
       if (!resetReady) {
         if (myPort.available() > 0) {
           String inString = myPort.readStringUntil('\n');
           inString = trim(inString);
-          println(inString);
-          println(inString.equals("T"));
+          //println(inString);
+          //println(inString.equals("T"));
           if (inString.equals("T")) resetReady = true;
         }
       } else {
@@ -147,9 +162,11 @@ void draw() {
       }
     break;
     case 2:    // rate
-      cp5.getTab("rateTab").bringToFront();
+      updateRate();
     break;
     case 3:    // Finish
+      output.flush();  // Writes the remaining data to the file
+      output.close();  // Finishes the file
       cp5.getTab("finishTab").bringToFront();
     break;
   }
@@ -167,8 +184,6 @@ void updateStart(){
 }
 
 void updatePlay(){
-  
-  
   // request position from Arduino
   currRequestTime = millis();
   if (currRequestTime - lastRequestTime > requestInterval) {
@@ -186,14 +201,17 @@ void updatePlay(){
   
   // Change shape based on position
   float a = 0.01*(pos);
+  if (a < 0) a = 0;
   float rad = 200;
   float rad1 = rad*(1+a);
   float rad2 = rad/(1+a);
   noStroke();
-  fill(255,0,0);
+  float red = max(pos, 50);
+  red = min(red, 255);
+  fill(255,255-red,255-red);
   ellipse(width/2, height/2-rad2/2, rad1, rad2);
   fill(0);
-  rect(0, height/2-50, width, height/2);
+  rect(0, height/2-40, width, height/2);
   
   // Exit condition, if position > 200, play sound
   if (pos > 200) {
@@ -209,10 +227,16 @@ void updatePlay(){
       myPort.clear();
       resetReady = false;
       uiState = 2;
-      println("change to state 2");
+      println("change to state 2 (rate)");
+      cp5.getController("pleasantness").setValue(5);
     }
     
   }
+}
+
+void updateRate() {
+  cp5.getTab("rateTab").bringToFront();
+  sliderVal = round(cp5.getController("pleasantness").getValue());
 }
 
 void controlEvent(ControlEvent theEvent) {
@@ -220,19 +244,20 @@ void controlEvent(ControlEvent theEvent) {
     if(theEvent.getController().getName()=="start") {
      myPort.write(str(randomarray[idx]));
      println(randomarray[idx]);
-     println("change to state 1");
+     println("change to state 1 (play)");
      uiState = 1;
     }
     if(theEvent.getController().getName()=="confirm") {
-     idx++;
-     if (idx == 27) {  // finish
-       println("change to state 3");
-       uiState = 3;
-     } else {
+      saveDataToFile();
+      idx++;
+      if (idx == 27) {  // finish
+        println("change to state 3 (finish)");
+        uiState = 3;
+       } else {
        myPort.write(str(randomarray[idx]));
        myPort.clear();
        println(randomarray[idx]);
-       println("change to state 1");
+       println("change to state 1 (play)");
        pos = 0;     // reset postion value, will be updated later 
        uiState = 1;
        allowToPlay = true;
@@ -243,6 +268,22 @@ void controlEvent(ControlEvent theEvent) {
     }
     
   }
+}
+
+void saveDataToFile() {
+  int soundCondition;
+  int hapticCondition;
+  if (randomarray[idx] == 6) {
+    soundCondition = 3;
+  } else {
+    soundCondition = randomarray[idx] % 3;
+  }
+  if (randomarray[idx] <= 2) hapticCondition = 0;
+  else if (randomarray[idx] >= 7) hapticCondition = 2;
+  else hapticCondition = 1;
+  
+  String outString = str(randomarray[idx]) + "; " + str(hapticCondition) + "; " + str(soundCondition) + "; " + str(sliderVal);
+  output.println(outString); 
 }
 
 void playOneSound(int cs) {
