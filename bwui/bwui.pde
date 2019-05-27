@@ -23,7 +23,8 @@ Serial myPort;
 
 // Communication
 float pos = 0;
-int[] randomarray =  new int[36];
+int arrayLength = 36;
+int[] randomarray =  new int[arrayLength];
 int idx = 0;
 
 int lastRequestTime = 0;
@@ -177,7 +178,7 @@ void controlEvent(ControlEvent theEvent) {
     if(theEvent.getController().getName()=="confirm") {
       saveDataToFile();
       idx++;
-      if (idx == 36) {  // finish
+      if (idx == arrayLength) {  // finish
         println("change to state 3 (finish)");
         uiState = 3;
        } else {
@@ -339,7 +340,12 @@ void playOneSound(int cs) {
 void saveDataToFile() {
   int soundCondition = randomarray[idx] % 4;
   int hapticCondition = randomarray[idx] / 4;
-
-  String outString = str(randomarray[idx]) + "; " + str(hapticCondition) + "; " + str(soundCondition) + "; " + str(sliderVal);
+  
+  String outString = str(randomarray[idx]) + ", " + str(hapticCondition) + ", " + str(soundCondition) + ", " + str(sliderVal);
+  //String outString = "[" + str(randomarray[idx]) + ", " + str(hapticCondition) + ", " + str(soundCondition) + ", " + str(sliderVal) + "]";
+  //if (idx == 0) outString = "[" + outString + ",";
+  //else if (idx == arrayLength-1) outString = outString + "]";
+  //else outString = outString + ",";
+  
   output.println(outString); 
 }
